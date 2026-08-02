@@ -1,0 +1,19 @@
+# STM32CubeIDE
+Debug/
+Release/
+
+.settings/
+.metadata/
+
+*.launch
+
+# VSCode
+.vscode/
+
+# Backup
+*.bak
+*.tmp
+
+# Windows
+Thumbs.db
+Desktop.ini
