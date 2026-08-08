@@ -1,123 +1,56 @@
-# Console Library
+# Console
 
-## Opis
+Portable console library for embedded applications.
 
-Biblioteka realizuje uniwersalną konsolę tekstową niezależną od sprzętu.
+The library is part of the STM32 Universal Libraries framework and
+provides a hardware-independent console interface for sending and
+receiving text over any stream-based communication driver.
 
-Obsługiwane interfejsy realizowane są przez sterowniki (drivers):
+---
 
-- USB CDC
-- UART DMA
-- UART Interrupt
-- UART Polling
+# Features
 
-Jedna aplikacja może posiadać wiele niezależnych konsol.
+- Pure C (C11)
+- Multi-instance
+- Hardware independent
+- Circular transmit buffer
+- Circular receive buffer
+- Non-blocking transmission
+- Line-oriented reception
+- printf()-style formatted output
+- Raw binary transmission
+- Communication diagnostics
+- Compatible with CLI library
 
-Przykład:
+---
 
-```c
-console_t console_usb;
-console_t console_uart2;
+# Requirements
+
+- communication_uart_driver_t
+- STM32 HAL driver examples included
+
+---
+
+# Example
+
+See:
+
+```
+examples/STM32CubeIDE/
 ```
 
 ---
 
-## Funkcje
+# API
 
-### Console_Init()
+The complete API documentation is available in:
 
-```c
-console_status_t Console_Init(console_t *con,
-                              const console_driver_t *driver,
-                              void *hw);
+```
+Inc/console.h
 ```
 
-Inicjalizacja konsoli.
-
-Parametry:
-
-- con – instancja konsoli
-- driver – sterownik transportu
-- hw – uchwyt sprzętowy (UART_HandleTypeDef, USB itd.)
-
 ---
 
-### Console_Printf()
+# License
 
-```c
-Console_Printf(console_t *con,
-               const char *fmt,
-               ...);
-```
-
-Dodaje sformatowany tekst do kolejki TX.
-
----
-
-### Console_Write()
-
-```c
-Console_Write(console_t *con,
-              const uint8_t *data,
-              uint16_t len);
-```
-
-Dodaje dane binarne do kolejki TX.
-
----
-
-### Console_RxData()
-
-```c
-Console_RxData(console_t *con,
-               const uint8_t *buf,
-               uint16_t len);
-```
-
-Przekazuje odebrane dane do parsera linii.
-
-Wywoływana z callbacka sterownika.
-
----
-
-### Console_TxDone()
-
-Wywoływana z callbacka zakończenia transmisji.
-
-Rozpoczyna wysyłanie kolejnego fragmentu FIFO.
-
----
-
-### Console_LineReady()
-
-Sprawdza czy odebrano pełną linię zakończoną ENTER.
-
----
-
-### Console_GetLine()
-
-Zwraca wskaźnik na odebraną linię.
-
----
-
-### Console_LineDone()
-
-Czyści flagę odebranej linii.
-
----
-
-## Diagram
-
-Application
-
-↓
-
-Console
-
-↓
-
-Driver (USB/UART)
-
-↓
-
-Hardware
+MIT License

@@ -13,16 +13,17 @@
 #include <stdarg.h>
 
 
+static const uint8_t newline[] = "\r\n";
 
 
-void Console_RxData(console_t *con,
+void Console_RxData(console_t *obj,
 					const uint8_t *buf,
 					uint16_t len)
 {
-	if ((con == NULL) || (buf == NULL) || (len == 0))
+	if ((obj == NULL) || (buf == NULL) || (len == 0))
 		return;
 
-	if (con->rx_line_ready)
+	if (obj->rx_line_ready)
 		return;
 
 	for (uint16_t i = 0; i < len; i++)
@@ -31,186 +32,260 @@ void Console_RxData(console_t *con,
 
 		if ((c == '\r') || (c == '\n'))
 		{
-			con->line[con->rx_index] = '\0';
-			con->rx_index = 0;
-			con->rx_line_ready = true;
+			obj->line[obj->rx_index] = '\0';
+			obj->rx_index = 0;
+			obj->rx_line_ready = true;
 			break;
 		}
 
-		if (con->rx_index < (CONSOLE_RX_SIZE - 1))
+		if (obj->rx_index < (CONSOLE_RX_SIZE - 1))
 		{
-			con->line[con->rx_index++] = c;
+			obj->line[obj->rx_index++] = c;
 		}
 	}
 }
 
-void Console_Printf(console_t *con, const char *fmt, ...)
-{
-	if ((con == NULL) || (fmt == NULL))
-		return;
 
-	char buffer[CONSOLE_PRINTF_BUFFER_SIZE];
+
+/******************************************************************************
+ * @brief Prints formatted text.
+ *
+ * Formats a text string using a variable argument list and transmits it
+ * through the console output driver.
+ *
+ * @param obj
+ * Pointer to console object.
+ *
+ * @param format
+ * Printf-style format string.
+ *
+ * @param args
+ * Variable argument list.
+ *
+ * @return
+ * Operation status.
+ ******************************************************************************/
+static console_status_t Console_VPrintf(
+        console_t *obj,
+        const char *format,
+        va_list args)
+{
+    int len;
+
+    if ((obj == NULL) || (format == NULL))
+    {
+        return CONSOLE_ERROR;
+    }
+
+    len = vsnprintf(obj->tx_printf_buffer,
+                    sizeof(obj->tx_printf_buffer),
+                    format,
+                    args);
+
+    if (len < 0)
+    {
+        return CONSOLE_ERROR;
+    }
+
+    if (len >= (int)sizeof(obj->tx_printf_buffer))
+    {
+        len = sizeof(obj->tx_printf_buffer) - 1;
+    }
+
+    return Console_Write(obj,
+                         (const uint8_t *)obj->tx_printf_buffer,
+                         (uint16_t)len);
+}
+
+
+console_status_t Console_PrintLine(console_t *obj, const char *format, ...)
+{
+    console_status_t status;
+    va_list args;
+
+    if ((obj == NULL) || (format == NULL))
+    {
+        return CONSOLE_ERROR;
+    }
+
+    va_start(args, format);
+
+    status = Console_VPrintf(obj, format, args);
+
+    va_end(args);
+
+    if (status != CONSOLE_OK)
+            return status;
+
+    return Console_Write(obj,
+                         newline,
+                         sizeof(newline) - 1);
+
+}
+
+
+
+console_status_t Console_Printf(console_t *obj, const char *format, ...)
+{
+	if ((obj == NULL) || (format == NULL)){
+		return CONSOLE_ERROR;
+	}
+
+	console_status_t status;
 
 	va_list args;
 
-	va_start(args, fmt);
+	va_start(args, format);
 
-	int len = vsnprintf(buffer,
-						sizeof(buffer),
-						fmt,
-						args);
+	status = Console_VPrintf(obj, format, args);
 
 	va_end(args);
 
-	if (len <= 0)
-		return;
+	return status;
 
-	if (len >= sizeof(buffer))
-		len = sizeof(buffer) - 1;
-
-	Console_Write(con,
-				  (const uint8_t *)buffer,
-				  (uint16_t)len);
 }
 
-console_status_t Console_Write(console_t *con,
+console_status_t Console_Write(console_t *obj,
 							   const uint8_t *data,
 							   uint16_t len)
 {
-	if ((con == NULL) || (data == NULL) || (len == 0))
+	if ((obj == NULL) || (data == NULL) || (len == 0))
 		return CONSOLE_ERROR;
 
 	while (len--)
 	{
-		uint16_t next = con->tx_head + 1;
+		uint16_t next = obj->tx_head + 1;
 
 		if (next >= CONSOLE_TX_SIZE)
 			next = 0;
 
 		/* FIFO pełne */
-		if (next == con->tx_tail)
+		if (next == obj->tx_tail)
 		{
-			if (con->tx_overflow != UINT32_MAX)
-				con->tx_overflow++;
+			if (obj->tx_overflow != UINT32_MAX)
+				obj->tx_overflow++;
 			return CONSOLE_OVERFLOW;
 		}
 
-		con->tx_buffer[con->tx_head] = *data++;
-		con->tx_head = next;
+		obj->tx_buffer[obj->tx_head] = *data++;
+		obj->tx_head = next;
 	}
 
 	/* rozpocznij transmisję jeśli interfejs jest wolny */
-	Console_TxStart(con);
+	Console_TxStart(obj);
 
 	return CONSOLE_OK;
 }
 
-void Console_TxStart(console_t *con)
+void Console_TxStart(console_t *obj)
 {
-	if (con == NULL)
+	if (obj == NULL)
 		return;
 
-	if (con->tx_busy)
+	if (obj->tx_busy)
 		return;
 
-	if (con->tx_head == con->tx_tail)
+	if (obj->tx_head == obj->tx_tail)
 		return;
 
 	uint16_t cnt;
 
-	if (con->tx_head > con->tx_tail)
+	if (obj->tx_head > obj->tx_tail)
 	{
 		/* dane są w jednym ciągłym bloku */
-		cnt = con->tx_head - con->tx_tail;
+		cnt = obj->tx_head - obj->tx_tail;
 	}
 	else
 	{
 		/* wysyłamy do końca bufora */
-		cnt = CONSOLE_TX_SIZE - con->tx_tail;
+		cnt = CONSOLE_TX_SIZE - obj->tx_tail;
 	}
 
 	/* rozpoczęcie transmisji */
-	if ((con->driver == NULL) ||
-		(con->driver->Write == NULL))
+	if ((obj->driver == NULL) ||
+		(obj->driver->Write == NULL))
 		return;
 
-	if (con->driver->Write(con->hw,
-						   (uint8_t *)&con->tx_buffer[con->tx_tail],
+	if (obj->driver->Write(obj->hw,
+						   (uint8_t *)&obj->tx_buffer[obj->tx_tail],
 						   cnt))
 	{
-		con->tx_tail += cnt;
+		obj->tx_tail += cnt;
 
-		if (con->tx_tail >= CONSOLE_TX_SIZE)
-			con->tx_tail = 0;
+		if (obj->tx_tail >= CONSOLE_TX_SIZE)
+			obj->tx_tail = 0;
 
-		con->tx_busy = true;
+		obj->tx_busy = true;
 	}
 }
 
 /*nalezy ponizsza funkcjedodac do callbackow transmisji stworzonych driverow*/
 
-void Console_TxDone(console_t *con)
+void Console_TxDone(console_t *obj)
 {
-	if (con == NULL)
+	if (obj == NULL)
 		return;
 
-	con->tx_busy = false;
+	obj->tx_busy = false;
 
 	/* jeżeli są kolejne dane, wyślij je od razu */
-	Console_TxStart(con);
+	Console_TxStart(obj);
 }
 
-console_status_t Console_Init(console_t *con,
-							  const console_driver_t *driver,
+console_status_t Console_Init(console_t *obj,
+							  const communication_uart_driver_t *driver,
 							  void *hw)
 {
 
-	if ((con == NULL) || (driver == NULL))
+	if ((obj == NULL) || (driver == NULL))
 		return CONSOLE_ERROR;
 
-	memset(con, 0, sizeof(console_t));
+	memset(obj, 0, sizeof(console_t));
 
-	con->driver = driver;
-	con->hw = hw;
+	obj->driver = driver;
+	obj->hw = hw;
 
 	return CONSOLE_OK;
 }
-bool Console_LineReady(const console_t *con)
+
+
+
+bool Console_LineReady(const console_t *obj)
 {
-    if (con == NULL)
+    if (obj == NULL)
         return false;
 
-    return con->rx_line_ready;
+    return obj->rx_line_ready;
 }
 
-const char *Console_GetLine(const console_t *con)
+const char *Console_GetLine(const console_t *obj)
 {
-    if (con == NULL)
+    if (obj == NULL)
         return NULL;
 
-    return con->line;
+    return obj->line;
 }
 
-void Console_LineDone(console_t *con)
+void Console_LineDone(console_t *obj)
 {
-    if (con == NULL)
+    if (obj == NULL)
         return;
 
-    con->rx_line_ready = false;
+    obj->rx_line_ready = false;
 }
 
-uint32_t Console_GetOverflow(const console_t *con)
+uint32_t Console_GetOverflow(const console_t *obj)
 {
-    if (con == NULL)
+    if (obj == NULL)
         return 0;
 
-    return con->tx_overflow;
+    return obj->tx_overflow;
 }
 
-bool Console_IsBusy(const console_t *con)
+bool Console_IsBusy(const console_t *obj)
 {
-    if (con == NULL)
+    if (obj == NULL)
         return false;
 
-    return con->tx_busy;
+    return obj->tx_busy;
 }
